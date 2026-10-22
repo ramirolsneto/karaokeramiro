@@ -1,49 +1,30 @@
-name: Compilar Videoke IA Pro Mobile
+name: Build APK
 on:
+  push:
+    branches: [main, master]
   workflow_dispatch:
-permissions:
-  contents: read
+ 
 jobs:
-  android:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: android-actions/setup-android@v3
+        with: { distribution: temurin, java-version: 17 }
+      - name: Pacotes do Android SDK
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "ndk;26.1.10909125" "cmake;3.22.1" "platforms;android-34" "build-tools;34.0.0"
+      - name: Baixar whisper.cpp
+        run: git clone --depth 1 --branch v1.7.1 https://github.com/ggml-org/whisper.cpp app/src/main/cpp/whisper.cpp
       - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: "8.7" }
+      - name: Compilar
+        run: gradle assembleRelease --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
         with:
-          gradle-version: '8.10.2'
-      - name: Android NDK e CMake
-        run: sdkmanager --install 'ndk;26.3.11579264' 'cmake;3.22.1' 'platforms;android-35' 'build-tools;35.0.0'
-      - name: Preparar bibliotecas sherpa-onnx 1.13.8
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p app/src/main/jniLibs app/src/main/cpp/include/sherpa-onnx/c-api app/src/main/assets/models
-          curl -fL --retry 3 -o /tmp/sherpa.aar https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-1.13.8.aar
-          unzip -q -o /tmp/sherpa.aar 'jni/arm64-v8a/*' -d /tmp/sherpa
-          cp -a /tmp/sherpa/jni/arm64-v8a app/src/main/jniLibs/
-          test -s app/src/main/jniLibs/arm64-v8a/libsherpa-onnx-c-api.so
-          curl -fL --retry 3 -o app/src/main/cpp/include/sherpa-onnx/c-api/c-api.h https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/v1.13.8/sherpa-onnx/c-api/c-api.h
-      - name: Preparar modelos Spleeter e Whisper
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl -fL --retry 3 -o /tmp/models.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/sherpa-onnx-spleeter-2stems-fp16.tar.bz2
-          tar -xjf /tmp/models.tar.bz2 -C /tmp
-          find /tmp/sherpa-onnx-spleeter-2stems-fp16 -name '*.onnx' -exec cp {} app/src/main/assets/models/ \;
-          curl -fL --retry 3 -o app/src/main/assets/models/ggml-base.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin
-          du -h app/src/main/assets/models/*
-      - name: Compilar APK Android ARM64
-        run: gradle --no-daemon :app:assembleDebug --stacktrace
-      - name: Disponibilizar APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Videoke-IA-Pro-Mobile-APK
-          path: app/build/outputs/apk/debug/*.apk
-          retention-days: 14
+          name: karaoke-ia-apk
+          path: app/build/outputs/apk/release/*.apk
+ 
