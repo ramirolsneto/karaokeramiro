@@ -20,7 +20,7 @@ jobs:
       - name: Baixar whisper.cpp
         run: git clone --depth 1 --branch v1.7.1 https://github.com/ggml-org/whisper.cpp app/src/main/cpp/whisper.cpp
       - uses: gradle/actions/setup-gradle@v4
-        with: { gradle-version: "8.7" }
+        with: { gradle-version: "8.9" }
       - name: Compilar
         run: gradle assembleRelease --no-daemon --stacktrace
       - uses: actions/upload-artifact@v4
