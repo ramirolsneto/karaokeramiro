@@ -20,6 +20,32 @@ object AudioTools {
         if(src.name.endsWith(".wav",true)&&readWaveFormat(src)?.let {it.channels in 1..2 && it.encoding==16}==true){src.copyTo(dst,true);return}
         decodeToWav(src,dst)
     }
+    /** Make Demucs' exact 44.1 kHz stereo PCM16 input in a bounded-memory streaming pass. */
+    fun prepareDemucsWav(context:Context,src:File,dst:File){
+        val decoded=File(dst.parentFile,"${dst.nameWithoutExtension}-decoded.wav")
+        try {
+            if(src.name.endsWith(".wav",true)&&readWaveFormat(src)?.let {it.channels in 1..2 && it.encoding==16}==true) src.copyTo(decoded,true)
+            else decodeToWav(src,decoded)
+            resampleToStereo44100(decoded,dst)
+        } finally { decoded.delete() }
+    }
+    internal fun resampleToStereo44100(src:File,dst:File){
+        val w=readWaveFormat(src)?:throw IOException("Áudio PCM WAV não suportado")
+        if(w.encoding!=16||w.channels !in 1..8||w.rate<=0||w.dataLength%(2*w.channels)!=0L)throw IOException("Demucs requer áudio PCM 16-bit decodificável")
+        val inFrames=w.dataLength/(2*w.channels);if(inFrames==0L)throw IOException("Áudio vazio");val outFrames=(inFrames.toDouble()*44100.0/w.rate).toLong()
+        RandomAccessFile(src,"r").use{input->RandomAccessFile(dst,"rw").use{out->
+            out.setLength(0);out.write(ByteArray(44));val bytes=ByteArray(w.channels*2);var current=0L;val s0=FloatArray(w.channels);val s1=FloatArray(w.channels);readFrame(input,w,0,bytes,s0);if(inFrames>1)readFrame(input,w,1,bytes,s1)else s1.indices.forEach{ s1[it]=s0[it] }
+            val block=ByteArray(8192);var used=0
+            for(o in 0 until outFrames){val p=o.toDouble()*w.rate/44100.0;val idx=p.toLong().coerceAtMost(inFrames-1);while(current<idx){current++;s0.indices.forEach{s0[it]=s1[it]};if(current+1<inFrames)readFrame(input,w,current+1,bytes,s1)else s1.indices.forEach{s1[it]=s0[it]}}
+                val frac=(p-idx).toFloat();for(ch in 0..1){val a=s0[if(w.channels==1)0 else ch];val b=s1[if(w.channels==1)0 else ch];val v=(a+(b-a)*frac).coerceIn(-32768f,32767f).toInt();block[used++]=v.toByte();block[used++]=(v shr 8).toByte()}
+                if(used>=block.size-4){out.write(block,0,used);used=0}
+            };if(used>0)out.write(block,0,used);header(out,44100,2,outFrames*4)
+        }}
+    }
+    private fun readFrame(file:RandomAccessFile,w:Wave,index:Long,scratch:ByteArray,dst:FloatArray){
+        file.seek(w.dataStart+index*2*w.channels);file.readFully(scratch,0,2*w.channels)
+        for(ch in 0 until w.channels)dst[ch]=((scratch[ch*2].toInt() and 255) or (scratch[ch*2+1].toInt() shl 8)).toShort().toFloat()
+    }
     data class Wave(val rate:Int,val channels:Int,val encoding:Int,val dataStart:Long,val dataLength:Long)
     fun readWaveFormat(f:File):Wave?{
         RandomAccessFile(f,"r").use{a->if(a.length()<44)return null

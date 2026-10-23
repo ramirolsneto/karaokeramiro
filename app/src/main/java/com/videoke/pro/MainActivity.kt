@@ -67,12 +67,11 @@ class MainActivity:Activity(){
             val source=file?:error("Selecione um arquivo próprio para começar")
             val work=baseDir();val input=File(work,"input-${UUID.randomUUID()}.wav")
             inform("Decodificando áudio no Android…")
-            AudioTools.prepareWav(this@MainActivity,source,input)
-            inform("Carregando IA Spleeter no celular (CPU)…")
-            val vm=copyAssetModel("vocals.fp16.onnx");val am=copyAssetModel("accompaniment.fp16.onnx")
+            AudioTools.prepareDemucsWav(this@MainActivity,source,input)
+            inform("Carregando Demucs no celular (CPU)…")
+            val model=copyAssetModel("htdemucs_ft_vocals.onnx")
             val vc=File(work,"voz-${UUID.randomUUID()}.wav");val ac=File(work,"instrumental-${UUID.randomUUID()}.wav")
-            val err=NativeSeparator().run(input.absolutePath,vm.absolutePath,am.absolutePath,vc.absolutePath,ac.absolutePath)
-            if(err.isNotEmpty())error(err)
+            DemucsSeparator().separate(input,model,vc,ac)
             check(vc.exists()&&ac.exists()){"Não foram geradas as faixas"}
             vocals=vc;instrumental=ac;video=null
             input.delete();send("separated","Faixas de voz e instrumental salvas no celular.")
